@@ -1,0 +1,18 @@
+# IDE
+.idea/
+
+# Python
+__pycache__/
+.venv/
+
+# Data
+frames/
+frames_synthetic/
+masks/
+detections.parquet
+
+# Stream URL cache (contains expiring tokens)
+.stream_url_cache
+
+# Generated HTML maps
+*.html
