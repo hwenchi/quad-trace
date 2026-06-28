@@ -8,7 +8,7 @@ import pandas as pd
 
 from geo import utm_to_latlon
 
-INPUT = Path("detections.parquet")
+INPUT = Path("detections")
 OUTPUT = Path("heatmap.html")
 
 CENTER = [40.107542, -88.227222]

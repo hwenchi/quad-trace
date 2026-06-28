@@ -1,4 +1,4 @@
-import sys
+import argparse
 import time
 from pathlib import Path
 
@@ -8,12 +8,26 @@ import pandas as pd
 import piexif
 
 from detect import extract_feet, get_foreground_mask
-from homography import pixels_to_utm
+from geo import latlon_to_utm
+from homography import pixels_to_utm, utm_to_pixels
 
 FRAMES_DIR = Path("frames")
 MASKS_DIR = Path("masks")
-OUTPUT = Path("detections.parquet")
+SYNTHETIC_DIR = Path("frames_synthetic_overlay")
+DETECTIONS_DIR = Path("detections")
 POLL_INTERVAL = 1.0  # seconds
+PARTITION_SIZE = 100
+WARMUP_FRAMES = 20
+
+N_BLOBS = 3
+STEP_M = 3
+
+CORNERS_LATLON = np.array([
+    [40.108806, -88.227611],
+    [40.108778, -88.226917],
+    [40.106417, -88.227556],
+    [40.106417, -88.226861],
+])
 
 
 def read_timestamp(path: Path) -> int:
@@ -25,13 +39,44 @@ def read_timestamp(path: Path) -> int:
         return int(path.stat().st_mtime)
 
 
-def process_frame(frame_path: Path, mask_path: Path, H: np.ndarray) -> list[dict]:
+class SyntheticBlobs:
+    def __init__(self, H: np.ndarray) -> None:
+        self.H_inv = np.linalg.inv(H)
+        corners_utm = latlon_to_utm(CORNERS_LATLON)
+        self.utm_min = corners_utm.min(axis=0)
+        self.utm_max = corners_utm.max(axis=0)
+        self.positions = self.utm_min + np.random.rand(N_BLOBS, 2) * (self.utm_max - self.utm_min)
+
+    def step(self) -> None:
+        angles = np.random.uniform(0, 2 * np.pi, N_BLOBS)
+        delta = STEP_M * np.column_stack([np.cos(angles), np.sin(angles)])
+        self.positions = np.clip(self.positions + delta, self.utm_min, self.utm_max)
+
+    def overlay(self, frame: np.ndarray) -> np.ndarray:
+        self.step()
+        out = frame.copy()
+        pixels = utm_to_pixels(self.positions, self.H_inv)
+        for x, y in pixels:
+            cv2.rectangle(out, (x - 15, y - 40), (x + 15, y), (0, 100, 200), -1)
+        return out
+
+
+def process_frame(frame_path: Path, mask_path: Path, H: np.ndarray,
+                  blobs: SyntheticBlobs | None, debug: bool) -> list[dict]:
     frame = cv2.imread(str(frame_path))
     if frame is None:
         return []
     timestamp = read_timestamp(frame_path)
+
+    if blobs is not None:
+        frame = blobs.overlay(frame)
+        if debug:
+            cv2.imwrite(str(SYNTHETIC_DIR / frame_path.name), frame)
+
     mask = get_foreground_mask(frame)
-    cv2.imwrite(str(mask_path), mask)
+    if debug:
+        cv2.imwrite(str(mask_path), mask)
+
     feet = extract_feet(mask)
     if len(feet) == 0:
         return []
@@ -39,42 +84,59 @@ def process_frame(frame_path: Path, mask_path: Path, H: np.ndarray) -> list[dict
     return [{"timestamp": timestamp, "easting": e, "northing": n} for e, n in utm]
 
 
-WARMUP_FRAMES = 20
-
-
-def warmup(frames_dir: Path) -> int:
+def warmup(frames_dir: Path) -> None:
     frames = sorted(frames_dir.glob("*.jpg"))[:WARMUP_FRAMES]
     for frame_path in frames:
         frame = cv2.imread(str(frame_path))
         if frame is not None:
             get_foreground_mask(frame)
     print(f"Warmed up MOG2 on {len(frames)} frames")
-    return len(frames)
 
 
-def run(frames_dir: Path, H: np.ndarray) -> None:
-    MASKS_DIR.mkdir(exist_ok=True)
-    warmup(frames_dir)
+def flush(rows: list[dict], partition: int) -> None:
+    DETECTIONS_DIR.mkdir(exist_ok=True)
+    path = DETECTIONS_DIR / f"{partition:05d}.parquet"
+    pd.DataFrame(rows, columns=["timestamp", "easting", "northing"]).to_parquet(path, index=False)
+    print(f"Wrote partition {path} ({len(rows)} rows)")
+
+
+def run(H: np.ndarray, synthetic: bool, debug: bool) -> None:
+    if debug:
+        MASKS_DIR.mkdir(exist_ok=True)
+        if synthetic:
+            SYNTHETIC_DIR.mkdir(exist_ok=True)
+
+    blobs = SyntheticBlobs(H) if synthetic else None
+    warmup(FRAMES_DIR)
     idx = 0
     rows = []
-    print(f"Watching {frames_dir} for new frames...")
+    partition = 0
+    print(f"Watching {FRAMES_DIR} for new frames...")
 
     while True:
-        next_frame = frames_dir / f"{idx:05d}.jpg"
+        next_frame = FRAMES_DIR / f"{idx:05d}.jpg"
         if not next_frame.exists():
             time.sleep(POLL_INTERVAL)
             continue
 
         mask_path = MASKS_DIR / next_frame.name
-        rows.extend(process_frame(next_frame, mask_path, H))
+        rows.extend(process_frame(next_frame, mask_path, H, blobs, debug))
         idx += 1
 
-        df = pd.DataFrame(rows, columns=["timestamp", "easting", "northing"])
-        df.to_parquet(OUTPUT, index=False)
-        print(f"Processed {idx} frames, {len(rows)} detections total")
+        if len(rows) >= PARTITION_SIZE:
+            flush(rows, partition)
+            rows = []
+            partition += 1
+
+        print(f"Processed {idx} frames, {len(rows)} buffered rows")
 
 
 if __name__ == "__main__":
-    frames_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else FRAMES_DIR
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--synthetic", action="store_true", help="Overlay synthetic moving blobs")
+    parser.add_argument("--debug", action="store_true", help="Save masks and overlays to disk")
+    args = parser.parse_args()
+
     H = np.load("homography.npy")
-    run(frames_dir, H)
+    debug = args.debug or args.synthetic
+    run(H, args.synthetic, debug)

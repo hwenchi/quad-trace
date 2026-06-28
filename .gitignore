@@ -8,8 +8,9 @@ __pycache__/
 # Data
 frames/
 frames_synthetic/
+frames_synthetic_overlay/
 masks/
-detections.parquet
+detections/
 
 # Stream URL cache (contains expiring tokens)
 .stream_url_cache
