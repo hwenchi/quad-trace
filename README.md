@@ -1,6 +1,6 @@
 # QuadTrace
 
-Pedestrian detection and geographic heatmap for the UIUC Main Quad, using the [quadcam YouTube live stream](https://www.youtube.com/watch?v=WyrkXojtRXk).
+Pedestrian detection and geographic heatmap for the UIUC Main Quad, using the [Quad Cam YouTube live stream](https://www.youtube.com/watch?v=WyrkXojtRXk).
 
 ## Pipeline
 
