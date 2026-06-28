@@ -25,8 +25,8 @@ Use `run.sh` to clean up and start both processes together:
 
 ```bash
 bash run.sh                  # normal mode
-bash run.sh --synthetic      # overlay synthetic moving blobs
-bash run.sh --synthetic --debug  # also save frames, masks, overlays to disk
+bash run.sh --synthetic      # overlay synthetic moving blobs (saves overlays + masks)
+bash run.sh --debug          # save masks to disk for inspection
 ```
 
 ### Visualization (offline, on-demand)
@@ -34,9 +34,3 @@ bash run.sh --synthetic --debug  # also save frames, masks, overlays to disk
 | Script | Purpose |
 |--------|---------|
 | `visualize.py` | Render accumulated detections as a KDE heatmap in folium |
-
-## Install
-
-```bash
-uv sync
-```
