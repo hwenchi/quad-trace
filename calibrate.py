@@ -3,8 +3,22 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-GRID_FILE = Path("gcps_latlon.npy")
+from geo import latlon_to_utm
+from homography import compute_homography
+
 WINDOW_NAME = "Calibration"
+
+GCPS_LATLON = np.array([
+    [40.108753, -88.227446],
+    [40.108764, -88.227017],
+    [40.108353, -88.227226],
+    [40.108037, -88.227468],
+    [40.108049, -88.226974],
+    [40.107536, -88.227282],
+    [40.106994, -88.227588],
+    [40.107009, -88.226877],
+    [40.106612, -88.227218],
+])
 
 
 def collect_pixel_coords(frame_path: Path, n_points: int) -> np.ndarray:
@@ -53,18 +67,16 @@ def collect_pixel_coords(frame_path: Path, n_points: int) -> np.ndarray:
 
 
 if __name__ == "__main__":
-    if not GRID_FILE.exists():
-        raise FileNotFoundError("gcps_latlon.npy not found — run gen_gcps.py first")
-
     frames = sorted(Path("frames").glob("*.jpg"))
     if not frames:
         raise FileNotFoundError("No frames found — run ingest.py first")
 
-    grid_latlon = np.load(GRID_FILE)
-    pixels = collect_pixel_coords(frames[0], len(grid_latlon))
+    pixels = collect_pixel_coords(frames[0], len(GCPS_LATLON))
 
-    if len(pixels) < len(grid_latlon):
-        print(f"Only {len(pixels)}/{len(grid_latlon)} points collected, not saving.")
+    if len(pixels) < len(GCPS_LATLON):
+        print(f"Only {len(pixels)}/{len(GCPS_LATLON)} points collected, not saving.")
     else:
-        np.save("gcps_pixels.npy", pixels)
-        print(f"Saved gcps_pixels.npy ({len(pixels)} points)")
+        H = compute_homography(pixels, latlon_to_utm(GCPS_LATLON))
+        np.save("homography.npy", H)
+        print(f"Saved homography.npy ({len(pixels)} points)")
+        print("H:\n", H)

@@ -8,7 +8,7 @@ Pedestrian detection and geographic heatmap for the UIUC Main Quad, using the [Q
 
 | Script | Purpose |
 |--------|---------|
-| `gen_gcps.py` | Generate a reference grid of ground control points, open in browser |
+| `map.py` | Display GCPs on satellite map (`--pick` to click and get coordinates) |
 | `calibrate.py` | Click pixel coordinates for each GCP, save to `gcps_pixels.npy` |
 | `homography.py` | Compute pixel → UTM homography from GCPs, save to `homography.npy` |
 
@@ -19,7 +19,7 @@ Two processes communicate via the `frames/` directory as a queue.
 | Script | Purpose |
 |--------|---------|
 | `ingest.py` | Capture frames from the live stream via yt-dlp + OpenCV, write to `frames/` |
-| `pipeline.py` | Poll `frames/` for new frames: YOLOv8 person detection → UTM → `detections/` parquet |
+| `pipeline.py` | Poll `frames/` for new frames: frame differencing → UTM → `detections/` parquet |
 
 Use `run.sh` to clean up and start both processes together:
 
