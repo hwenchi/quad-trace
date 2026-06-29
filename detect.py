@@ -1,60 +1,29 @@
-import sys
-
 import cv2
 import numpy as np
+from ultralytics import YOLO
 
-MOG2_HISTORY = 500
-MOG2_VAR_THRESHOLD = 50
-MOG2_LEARNING_RATE = 0.05 # -1 = automatic
-MIN_AREA = 10
-MAX_AREA = 20000
+PERSON_CLASS = 0
+CONF_THRESHOLD = 0.1
 
-_mog2 = cv2.createBackgroundSubtractorMOG2(
-    history=MOG2_HISTORY,
-    varThreshold=MOG2_VAR_THRESHOLD,
-    detectShadows=True,
-)
+_model = YOLO("yolov8n.pt")
 
 
-def get_foreground_mask(frame: np.ndarray, roi: np.ndarray | None = None) -> np.ndarray:
-    if roi is not None:
-        frame = cv2.bitwise_and(frame, frame, mask=roi)
-    mask = _mog2.apply(frame, learningRate=MOG2_LEARNING_RATE)
-    # MOG2 marks shadows as 127 and foreground as 255 — keep only foreground
-    return (mask == 255).astype(np.uint8) * 255
+def detect(frame: np.ndarray) -> np.ndarray:
+    """Return (N, 5) array of [x1, y1, x2, y2, conf] for all person detections."""
+    h, w = frame.shape[:2]
+    imgsz = (round(h / 32) * 32, round(w / 32) * 32)
+    results = _model(frame, classes=[PERSON_CLASS], conf=0.01, imgsz=imgsz, verbose=False)[0]
+    if not results.boxes:
+        return np.empty((0, 5), dtype=np.float64)
+    return np.column_stack([results.boxes.xyxy.cpu().numpy(),
+                             results.boxes.conf.cpu().numpy()])
 
 
-def extract_feet(mask: np.ndarray) -> np.ndarray:
-    """Return (N, 2) array of bottom-edge centers for each detected blob."""
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    feet = []
-    for c in contours:
-        area = cv2.contourArea(c)
-        if not (MIN_AREA <= area <= MAX_AREA):
-            continue
-        x, y, w, h = cv2.boundingRect(c)
-        feet.append((x + w // 2, y + h))
-    return np.array(feet, dtype=np.float64)
-
-
-def draw_detections(frame: np.ndarray, mask: np.ndarray) -> np.ndarray:
+def draw_detections(frame: np.ndarray, boxes: np.ndarray) -> np.ndarray:
     out = frame.copy()
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for c in contours:
-        area = cv2.contourArea(c)
-        if not (MIN_AREA <= area <= MAX_AREA):
-            continue
-        cv2.drawContours(out, [c], -1, (0, 255, 0), 1)
-        x, y, w, h = cv2.boundingRect(c)
-        cv2.rectangle(out, (x, y), (x + w, y + h), (255, 0, 0), 1)
-        foot = (x + w // 2, y + h)
-        cv2.circle(out, foot, 4, (0, 0, 255), -1)
+    for x1, y1, x2, y2, conf in boxes:
+        cv2.rectangle(out, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 1)
+        cv2.circle(out, (int((x1 + x2) / 2), int(y2)), 4, (0, 0, 255), -1)
+        cv2.putText(out, f"{conf:.2f}", (int(x2) + 4, int(y1) + 12),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
     return out
-
-
-if __name__ == "__main__":
-    frame = cv2.imread(sys.argv[1])
-    mask = get_foreground_mask(frame)
-    cv2.imshow("mask", mask)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()

@@ -8,12 +8,11 @@ import piexif
 
 STREAM_URL = "https://www.youtube.com/watch?v=WyrkXojtRXk"
 CACHE_FILE = Path(".stream_url_cache")
-FRAME_SIZE = (1280, 720)
 
 
 def resolve_stream_url(youtube_url: str) -> str:
     result = subprocess.run(
-        ["yt-dlp", "-g", "--no-playlist", "--format", "best[height<=1080]", youtube_url],
+        ["yt-dlp", "-g", "--no-playlist", "--format", "best", youtube_url],
         capture_output=True,
         text=True,
         check=True,
@@ -57,7 +56,6 @@ def capture_frames(stream_url: str, output_dir: Path, sample_every: int = 30) ->
             break
 
         if frame_idx % sample_every == 0:
-            frame = cv2.resize(frame, FRAME_SIZE)
             path = output_dir / f"{saved:05d}.jpg"
             write_frame(frame, path, int(time.time()))
             print(f"Saved {path}")

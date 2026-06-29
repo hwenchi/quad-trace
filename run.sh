@@ -2,7 +2,7 @@
 set -e
 
 echo "Cleaning up..."
-rm -rf frames/ masks/ frames_synthetic_overlay/ detections/
+rm -rf frames/ detections/
 mkdir -p frames
 
 echo "Starting pipeline..."

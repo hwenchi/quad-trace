@@ -6,6 +6,7 @@ import folium.plugins
 import numpy as np
 import pandas as pd
 
+from detect import CONF_THRESHOLD
 from geo import utm_to_latlon
 
 INPUT = Path("detections")
@@ -16,6 +17,7 @@ CENTER = [40.107542, -88.227222]
 
 def render(input_path: Path, output_path: Path) -> None:
     df = pd.read_parquet(input_path)
+    df = df[df["conf"] >= CONF_THRESHOLD]
     if df.empty:
         print("No detections found.")
         return

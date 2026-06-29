@@ -19,14 +19,13 @@ Two processes communicate via the `frames/` directory as a queue.
 | Script | Purpose |
 |--------|---------|
 | `ingest.py` | Capture frames from the live stream via yt-dlp + OpenCV, write to `frames/` |
-| `pipeline.py` | Poll `frames/` for new frames: MOG2 detection → UTM → `detections.parquet` |
+| `pipeline.py` | Poll `frames/` for new frames: YOLOv8 person detection → UTM → `detections/` parquet |
 
 Use `run.sh` to clean up and start both processes together:
 
 ```bash
 bash run.sh                  # normal mode
-bash run.sh --synthetic      # overlay synthetic moving blobs (saves overlays + masks)
-bash run.sh --debug          # save masks to disk for inspection
+bash run.sh --debug          # save detection overlays to disk for inspection
 ```
 
 ### Visualization (offline, on-demand)
@@ -34,3 +33,4 @@ bash run.sh --debug          # save masks to disk for inspection
 | Script | Purpose |
 |--------|---------|
 | `visualize.py` | Render accumulated detections as a KDE heatmap in folium |
+| `reproject.py` | Recompute UTM coordinates from saved pixel positions after recalibration |
