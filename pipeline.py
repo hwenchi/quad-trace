@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import piexif
 
-from detect import detect, draw_detections
+from detect import detect_motion, draw_detections
 from homography import pixels_to_utm
 
 FRAMES_DIR = Path("frames")
@@ -32,9 +32,10 @@ ROI_FILE = Path("roi_mask.npy")
 def process_frame(frame: np.ndarray, prev_frame: np.ndarray, timestamp: int,
                   H: np.ndarray, roi: np.ndarray | None = None,
                   viz_path: Path | None = None) -> pd.DataFrame:
-    boxes = detect(frame, prev_frame, roi)
+    boxes, mask = detect_motion(frame, prev_frame, roi)
     if viz_path is not None:
-        cv2.imwrite(str(viz_path), draw_detections(frame, boxes))
+        viz = np.hstack([draw_detections(frame, boxes), mask])
+        cv2.imwrite(str(viz_path), viz)
     if not len(boxes):
         return pd.DataFrame()
     feet = np.column_stack([(boxes[:, 0] + boxes[:, 2]) / 2, boxes[:, 3]])
