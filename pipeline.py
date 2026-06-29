@@ -7,17 +7,18 @@ import numpy as np
 import pandas as pd
 import piexif
 
-from detect import extract_feet, get_foreground_mask
+from detect import draw_detections, extract_feet, get_foreground_mask
 from geo import latlon_to_utm
 from homography import pixels_to_utm, utm_to_pixels
 
 FRAMES_DIR = Path("frames")
 MASKS_DIR = Path("masks")
+DETECTIONS_VIZ_DIR = Path("detections_viz")
 SYNTHETIC_DIR = Path("frames_synthetic_overlay")
 DETECTIONS_DIR = Path("detections")
 POLL_INTERVAL = 1.0  # seconds
 PARTITION_SIZE = 100
-WARMUP_FRAMES = 20
+WARMUP_FRAMES = 100
 
 N_BLOBS = 3
 STEP_M = 3
@@ -61,8 +62,10 @@ class SyntheticBlobs:
         return out
 
 
-def process_frame(frame_path: Path, mask_path: Path, H: np.ndarray,
-                  blobs: SyntheticBlobs | None, debug: bool) -> list[dict]:
+def process_frame(frame_path: Path, H: np.ndarray,
+                  roi: np.ndarray | None, blobs: SyntheticBlobs | None,
+                  mask_path: Path | None = None,
+                  viz_path: Path | None = None) -> list[dict]:
     frame = cv2.imread(str(frame_path))
     if frame is None:
         return []
@@ -70,26 +73,29 @@ def process_frame(frame_path: Path, mask_path: Path, H: np.ndarray,
 
     if blobs is not None:
         frame = blobs.overlay(frame)
-        if debug:
+        if viz_path is not None:
             cv2.imwrite(str(SYNTHETIC_DIR / frame_path.name), frame)
 
-    mask = get_foreground_mask(frame)
-    if debug:
-        cv2.imwrite(str(mask_path), mask)
-
+    mask = get_foreground_mask(frame, roi)
     feet = extract_feet(mask)
+
+    if mask_path is not None:
+        mask_viz = draw_detections(cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR), mask)
+        cv2.imwrite(str(mask_path), mask_viz)
+    if viz_path is not None:
+        cv2.imwrite(str(viz_path), draw_detections(frame, mask))
     if len(feet) == 0:
         return []
     utm = pixels_to_utm(feet, H)
     return [{"timestamp": timestamp, "easting": e, "northing": n} for e, n in utm]
 
 
-def warmup(frames_dir: Path) -> None:
+def warmup(frames_dir: Path, roi: np.ndarray | None = None) -> None:
     frames = sorted(frames_dir.glob("*.jpg"))[:WARMUP_FRAMES]
     for frame_path in frames:
         frame = cv2.imread(str(frame_path))
         if frame is not None:
-            get_foreground_mask(frame)
+            get_foreground_mask(frame, roi)
     print(f"Warmed up MOG2 on {len(frames)} frames")
 
 
@@ -100,14 +106,23 @@ def flush(rows: list[dict], partition: int) -> None:
     print(f"Wrote partition {path} ({len(rows)} rows)")
 
 
+ROI_FILE = Path("roi_mask.npy")
+
+
 def run(H: np.ndarray, synthetic: bool, debug: bool) -> None:
+    roi = np.load(ROI_FILE) if ROI_FILE.exists() else None
+    if roi is not None:
+        print(f"Loaded ROI mask from {ROI_FILE}")
+    else:
+        print("No ROI mask found, processing full frame")
     if debug:
         MASKS_DIR.mkdir(exist_ok=True)
+        DETECTIONS_VIZ_DIR.mkdir(exist_ok=True)
         if synthetic:
             SYNTHETIC_DIR.mkdir(exist_ok=True)
 
     blobs = SyntheticBlobs(H) if synthetic else None
-    warmup(FRAMES_DIR)
+    warmup(FRAMES_DIR, roi)
     idx = 0
     rows = []
     partition = 0
@@ -119,8 +134,11 @@ def run(H: np.ndarray, synthetic: bool, debug: bool) -> None:
             time.sleep(POLL_INTERVAL)
             continue
 
-        mask_path = MASKS_DIR / next_frame.name
-        rows.extend(process_frame(next_frame, mask_path, H, blobs, debug))
+        rows.extend(process_frame(
+            next_frame, H, roi, blobs,
+            mask_path=MASKS_DIR / next_frame.name if debug else None,
+            viz_path=DETECTIONS_VIZ_DIR / next_frame.name if debug else None,
+        ))
         idx += 1
 
         if len(rows) >= PARTITION_SIZE:

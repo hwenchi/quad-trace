@@ -11,6 +11,7 @@ frames_synthetic/
 frames_synthetic_overlay/
 masks/
 detections/
+detections_viz/
 
 # Stream URL cache (contains expiring tokens)
 .stream_url_cache
